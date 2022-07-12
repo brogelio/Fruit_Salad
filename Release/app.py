@@ -7,39 +7,40 @@ import numpy as np
 import cv2
 import time
 import os
-from utils.rscamera import RealSenseCamera # Causes PyQt Warning
+from utils.rscamera import RealSenseCamera  # Causes PyQt Warning
 from utils.timer import Timer
 from utils.multithread import ThreadedImageWriter
 from utils.mouse import MouseControl
 from utils.gestures import *
 from utils.overlay import MainWindow
 import logging
+
 logger = logging.getLogger('app.py')
 import pyautogui
+
 pyautogui.FAILSAFE = False
 import keyboard
 from tkinter import *
 
-
-
 # Configuration variables
-emitter = True              # you can disable RealSense IR emitter
-log_level = logging.DEBUG   # log eve
+emitter = True  # you can disable RealSense IR emitter
+log_level = logging.DEBUG  # log eve
 # rything
-log_dir = 'log'             # log directory (automatically created)
-save_frames = False         # you can save captured frames to {log_dir}\run{n}\frames
-glove_type = "l_white"      # "nl_green" or "l_white"
-dominant_hand = "Right"     # "Right" or "Left"
-enable_keypress = True     # you can disable keypress when not needed
-monitor_resolution = (1920, 1080)
+log_dir = 'log'  # log directory (automatically created)
+save_frames = False  # you can save captured frames to {log_dir}\run{n}\frames
+glove_type = "l_white"  # "nl_green" or "l_white"
+dominant_hand = "Right"  # "Right" or "Left"
+enable_keypress = True  # you can disable keypress when not needed
+monitor_resolution = (2560, 1440)
+which_series = 0.3  # 480 or 1440 x-value
 
-# # Relative mouse movement
-mouse_mode = "middle"
-click_mode = "palm"
+# Relative mouse movement
+# mouse_mode = "middle"
+# click_mode = "palm"
 
 # Absolute mouse movement
-# mouse_mode = "palm"  # "palm" or "middle"
-# click_mode = "curl"  # "curl" or "palm"
+mouse_mode = "palm"  # "palm" or "middle"
+click_mode = "curl"  # "curl" or "palm"
 
 # Global variables
 CAMERA_RESOLUTION = (1280, 720)
@@ -52,14 +53,14 @@ FPS = 25
 # Sleep Timer
 def sleeping():
     global sleepy_time
-    if time.time() - sleepy_time > 1:       # 1 second sleep time
+    if time.time() - sleepy_time > 1:  # 1 second sleep time
         return False
     else:
         return True
 
 
 # Initialize Logger
-def init_logging(log_dir : str) -> str:
+def init_logging(log_dir: str) -> str:
     # Create log_dir if it doesn't exist
     if not os.path.exists(log_dir):
         os.mkdir(log_dir)
@@ -78,7 +79,7 @@ def init_logging(log_dir : str) -> str:
             break
 
     logging.basicConfig(filename=f'{run_dir}\\run.log', format='%(asctime)s - %(name)s - %(message)s',
-                            encoding='utf-8', level=log_level)
+                        encoding='utf-8', level=log_level)
     return run_dir
 
 
@@ -105,15 +106,16 @@ def generate_overlay(color_image, **kwargs):
     annotated_image = color_image.copy()
 
     # FPS overlay
-    cv2.putText(annotated_image, f'{fps:.2f}fps', (1280-240, 0+50), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 0), 3)
+    cv2.putText(annotated_image, f'{fps:.2f}fps', (1280 - 300, 0 + 50), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 0), 5)
 
     # Mode overlay
     mode_text = "Gesture" if gesture_mode else " Mouse "
-    cv2.putText(annotated_image, mode_text, (1280-240, 0+100), cv2.FONT_HERSHEY_PLAIN, 3, (255, 255, 255), 3)
+    cv2.putText(annotated_image, mode_text, (1280 - 240, 0 + 100), cv2.FONT_HERSHEY_PLAIN, 3, (255, 255, 255), 3)
 
     # Gesture overlay
     if gesture_mode and gesture_txt is not None:
-        cv2.putText(annotated_image, gesture_txt, (1280-320, 0+150), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
+        cv2.putText(annotated_image, gesture_txt, (1280 - 380, 0 + 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255),
+                    5)  # from 320 to 380
 
     # MediaPipe Landmark Overlay
     if results.multi_hand_landmarks:
@@ -131,8 +133,9 @@ def generate_overlay(color_image, **kwargs):
     # Distance Overlay
     if depth_coords is not None:
         distance = depth_image[depth_coords[1], depth_coords[0]]
-        cv2.putText(annotated_image, "{}mm".format(distance), (depth_coords[0], depth_coords[1] - 20),
-                        cv2.FONT_HERSHEY_PLAIN, 1.5, (0, 0, 0), 2)
+        cv2.putText(annotated_image, "{}mm".format(distance), (depth_coords[0], depth_coords[1] - 100),
+                    # from 40 to 100
+                    cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0), 5)
 
     return annotated_image
 
@@ -142,6 +145,7 @@ class MainThread(QThread):
     This class implements a PyQt Thread for the main program loop
     """
     OverlayUpdate = pyqtSignal(QImage)
+
     def run(self):
         self.ThreadActive = True
         self.main_loop()
@@ -151,8 +155,9 @@ class MainThread(QThread):
         # Note: The thread is terminated at the end of the main_loop()
 
     def display_image(self, image):
-        pic = QImage(image.data, image.shape[1], image.shape[0], QImage.Format_BGR888).scaled(640, 360)
-        self.OverlayUpdate.emit(pic)    # calls the function linked through OverlayUpdate.connect()
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pic = QImage(image.data, image.shape[1], image.shape[0], QImage.Format_RGB888).scaled(640, 360)
+        self.OverlayUpdate.emit(pic)  # calls the function linked through OverlayUpdate.connect()
 
     def main_loop(self):
         global run_dir, image_writer, camera, detector, mouse
@@ -170,221 +175,238 @@ class MainThread(QThread):
         logger.info('Entering main program loop.')
         try:
             while self.ThreadActive:
-                # Compute running FPS for display
-                currTime = time.time()
-                fps = 1 / (currTime - prevTime)
-                prevTime = currTime
+                try:
+                    # Compute running FPS for display
+                    currTime = time.time()
+                    fps = 1 / (currTime - prevTime)
+                    prevTime = currTime
 
-                # Get camera image
-                camera_timer.tic()
-                color_image, depth_image = get_frame(camera)
-                camera_timer.toc()
-                if color_image is False:
-                    logger.error('Frame dropped. Exiting program.')
-                    break
+                    # Get camera image
+                    camera_timer.tic()
+                    color_image, depth_image = get_frame(camera)
+                    camera_timer.toc()
+                    if color_image is False:
+                        logger.error('Frame dropped. Exiting program.')
+                        break
 
-                # Save frames to log_dir
-                save_timer.tic()
-                if save_frames:
-                    image_writer.save(f'{run_dir}\\frames\\{camera.frame_count}.jpg', color_image) 
-                save_timer.toc()
+                    # Save frames to log_dir
+                    save_timer.tic()
+                    if save_frames:
+                        image_writer.save(f'{run_dir}\\frames\\{camera.frame_count}.jpg', color_image)
+                    save_timer.toc()
 
-                # Hue shift if wearing green latex gloves
-                if glove_type == "nl_green":
-                    hsv_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
-                    h_only = hsv_image[:,:,0]
-                    h_only = 180 + h_only
-                    hsv_image[:,:,0] = h_only
-                    h_sv = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
-                    color_image = cv2.cvtColor(h_sv, cv2.COLOR_HSV2BGR)
+                    # Hue shift if wearing green latex gloves
+                    if glove_type == "nl_green":
+                        hsv_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
+                        h_only = hsv_image[:, :, 0]
+                        h_only = 180 + h_only
+                        hsv_image[:, :, 0] = h_only
+                        h_sv = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
+                        color_image = cv2.cvtColor(h_sv, cv2.COLOR_HSV2BGR)
 
-                # Use MediaPipe to detect hand
-                mediapipe_timer.tic()
-                results = detector.process(cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB))
-                hands = get_hand_landmarks_rel(results)
-                mediapipe_timer.toc()
+                    # Use MediaPipe to detect hand
+                    mediapipe_timer.tic()
+                    results = detector.process(cv2.cvtColor(color_image, cv2.COLOR_BGR2RGB))
+                    hands = get_hand_landmarks_rel(results)
+                    mediapipe_timer.toc()
 
-                if hands:
-                    hand1 = hands[0]
-                    lm_list1 = hand1["lm_list"]
-                    handedness = hand1["type"]
+                    if hands:
+                        hand1 = hands[0] if hands[0]["type"] == dominant_hand else hands[1]
+                        lm_list1 = hand1["lm_list"]  # List of 21 Landmarks
+                        handedness = hand1["type"]
 
-                    # Gesture classifier and mouse mode will only work on the specified hand
-                    if handedness == dominant_hand:
-                        ptr_coords = [int(lm_list1[8][0]*CAMERA_RESOLUTION[0]), int(lm_list1[8][1]*CAMERA_RESOLUTION[1])]
-                        depth_coords = [int(lm_list1[9][0]*CAMERA_RESOLUTION[0]), int(lm_list1[9][1]*CAMERA_RESOLUTION[1])]
+                        # Gesture classifier and mouse mode will only work on the specified hand
+                        if handedness == dominant_hand:
+                            ptr_coords = [int(lm_list1[8][0] * CAMERA_RESOLUTION[0]),
+                                          int(lm_list1[8][1] * CAMERA_RESOLUTION[1])]
+                            depth_coords = [int(lm_list1[9][0] * CAMERA_RESOLUTION[0]),
+                                            int(lm_list1[9][1] * CAMERA_RESOLUTION[1])]
 
-                        # Check finger curl
-                        fc = hand_curl(lm_list1)
-                        is_curl = False
-                        may_rotate = False
-                        if fc[1]==1 and fc[2]==1 and fc[3]==1 and fc[4]==1:
-                            is_curl = True
-                        if fc[3]==1 or fc[4]==1:
-                            may_rotate = True
+                            # Check finger curl
+                            fc = hand_curl(lm_list1)
+                            is_curl = False
+                            may_rotate = False
+                            if fc[1] == 1 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1:
+                                is_curl = True
+                            if fc[3] == 1 or fc[4] == 1:
+                                may_rotate = True
 
-                        # Check thumb orientation
-                        is_thumbs_up = gesture_flip(lm_list1)
+                            # Check thumb orientation
+                            is_thumbs_up = gesture_flip(lm_list1)
 
-                        # Gesture Mode
-                        if gesture_mode and not sleeping():
-                            gesture_timer.tic()
-                            gesture_txt = None
-                            color_image = cv2.putText(color_image, 'Waiting for Gesture', (1280-480, 0+150),
-                                                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, color=(0, 255, 0), thickness=3)
+                            # Gesture Mode
+                            if gesture_mode and not sleeping():
+                                gesture_timer.tic()
+                                gesture_txt = None
+                                color_image = cv2.putText(color_image, 'Waiting for Gesture', (1280 - 640, 0 + 150),
+                                                          # from 480 to 520
+                                                          cv2.FONT_HERSHEY_SIMPLEX, 2, color=(0, 255, 0), thickness=5)
 
-                            # Belt Filling Station
-                            belt_fill(lm_list1, ptr_coords, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt, FPS)
+                                # Belt Filling Station
+                                belt_fill(lm_list1, ptr_coords, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt,
+                                          FPS)
 
-                            # Check Swipe Gestures
-                            # swipe up/down ;; change series ;; left right arrow keys
-                            # swipe left/right ;; change img num ;; down up arrow keys
-                            is_swipe = False
-                            if not is_curl and not may_rotate and len(idx_belt) == FPS:
-                                is_swipe, swipe_dir = swiped(idx_belt)
-                                if is_swipe:
-                                    if swipe_dir == "Up":
-                                        print("i swiped up")
-                                        logger.info(f'Gesture: Swipe Up')
-                                        gesture_txt = "Swipe Up   "
-                                        if enable_keypress:
-                                            keyboard.press_and_release('left')
-                                    elif swipe_dir == "Down":
-                                        print("i swiped down")
-                                        logger.info(f'Gesture: Swipe Down')
-                                        gesture_txt = "Swipe Down "
-                                        if enable_keypress:
-                                            keyboard.press_and_release('right')
-                                    elif swipe_dir == "Left":
-                                        print("i swiped left")
-                                        logger.info(f'Gesture: Swipe Left')
-                                        gesture_txt = "Swipe Left "
-                                        if enable_keypress:
-                                            keyboard.press_and_release('up')
-                                    elif swipe_dir == "Right":
-                                        print("i swiped right")
-                                        logger.info(f'Gesture: Swipe Right')
-                                        gesture_txt = "Swipe Right"
-                                        if enable_keypress:
-                                            keyboard.press_and_release('down')
-                                    else:
-                                        logger.info(f'Error in Swipe Gesture')
+                                # Check Swipe Gestures
+                                # swipe up/down ;; change series ;; left right arrow keys
+                                # swipe left/right ;; change img num ;; down up arrow keys
+                                is_swipe = False
+                                if not is_curl and not may_rotate and len(idx_belt) == FPS:
+                                    is_swipe, swipe_dir = swiped(idx_belt)
+                                    if is_swipe:
+                                        if swipe_dir == "Up":
+                                            print("i swiped up")
+                                            logger.info(f'Gesture: Swipe Up')
+                                            gesture_txt = "Swipe Up   "
+                                            if enable_keypress:
+                                                keyboard.press_and_release('left')
+                                        elif swipe_dir == "Down":
+                                            print("i swiped down")
+                                            logger.info(f'Gesture: Swipe Down')
+                                            gesture_txt = "Swipe Down "
+                                            if enable_keypress:
+                                                keyboard.press_and_release('right')
+                                        elif swipe_dir == "Left":
+                                            print("i swiped left")
+                                            logger.info(f'Gesture: Swipe Left')
+                                            gesture_txt = "Swipe Left "
+                                            if enable_keypress:
+                                                keyboard.press_and_release('up')
+                                        elif swipe_dir == "Right":
+                                            print("i swiped right")
+                                            logger.info(f'Gesture: Swipe Right')
+                                            gesture_txt = "Swipe Right"
+                                            if enable_keypress:
+                                                keyboard.press_and_release('down')
+                                        else:
+                                            logger.info(f'Error in Swipe Gesture')
 
-                                    idx_belt = []   # Clear arrays
-                                    zoom_belt = []
+                                        idx_belt = []  # Clear arrays
+                                        zoom_belt = []
+                                        rotate_belt = []
+                                        sleepy_time = time.time()  # Sleep time reset
+
+                                # Check Zoom Gestures
+                                # zoom in/out ;; ctrl ++ ctrl --
+                                is_zoom = False
+                                if may_rotate and not is_curl and not is_swipe and len(zoom_belt) == FPS:
+                                    is_zoom, zoom_mode = zoomed(zoom_belt)
+                                    if is_zoom:
+                                        if zoom_mode == "zoom_in":
+                                            print("i zoomed in")
+                                            logger.info(f'Gesture: Zoom In')
+                                            gesture_txt = "   Zoom In "
+                                            if enable_keypress:
+                                                keyboard.press_and_release('ctrl+plus+plus')
+                                        elif zoom_mode == "zoom_out":
+                                            print("i zoomed out")
+                                            logger.info(f'Gesture: Zoom Out')
+                                            gesture_txt = "   Zoom Out"
+                                            if enable_keypress:
+                                                keyboard.press_and_release('ctrl+-+-')
+                                        else:
+                                            logger.info(f'Error in Zoom Gesture')
+
+                                        idx_belt = []  # Clear arrays
+                                        zoom_belt = []
+                                        rotate_belt = []
+                                        sleepy_time = time.time()  # Sleep time reset
+
+                                # Check Rotate Gestures
+                                is_rotate = False
+
+                                # Rotate removed
+                                # if is_curl and not is_swipe and not is_zoom and lm_list1[12][1] < lm_list1[3][1] and len(rotate_belt) == FPS:
+                                #     is_rotate, rotate_mode = rotate(rotate_belt)
+                                #     if is_rotate:
+                                #         if rotate_mode == "rotate_cw":
+                                #             print("i rotated cw")
+                                #             logger.info(f'Gesture: Rotate Clockwise')
+                                #             gesture_txt = " Rotate CW "
+                                #             if enable_keypress:
+                                #                 pyautogui.hotkey('ctrl', ']')
+                                #                 # keyboard.press_and_release('ctrl+]')
+                                #         elif rotate_mode == "rotate_ccw":
+                                #             print("i rotated ccw")
+                                #             logger.info(f'Gesture: Rotate Counter-clockwise')
+                                #             gesture_txt = " Rotate CCW"
+                                #             if enable_keypress:
+                                #                 pyautogui.hotkey('ctrl', '[')
+                                #                 # keyboard.press_and_release('ctrl+[')
+                                #         else:
+                                #             logger.info(f'Error in Rotate Gesture')
+                                #
+                                #         idx_belt = []   # Clear arrays
+                                #         zoom_belt = []
+                                #         rotate_belt = []
+                                #         sleepy_time = time.time()   # Sleep time reset
+
+                                # Check Thumbs Up Gesture
+                                if is_thumbs_up and is_curl and not is_swipe and not is_zoom and not is_rotate:
+                                    gesture_mode = False
+                                    print("gesture mode now off")
+                                    logger.info(f'Gesture: Thumbs Up')
                                     rotate_belt = []
-                                    sleepy_time = time.time()   # Sleep time reset
-
-
-                            # Check Zoom Gestures
-                            # zoom in/out ;; ctrl ++ ctrl --
-                            is_zoom = False
-                            if may_rotate and not is_curl and not is_swipe and len(zoom_belt) == FPS:
-                                is_zoom, zoom_mode = zoomed(zoom_belt)
-                                if is_zoom:
-                                    if zoom_mode == "zoom_in":
-                                        print("i zoomed in")
-                                        logger.info(f'Gesture: Zoom In')
-                                        gesture_txt = "   Zoom In "
-                                        if enable_keypress:
-                                            keyboard.press_and_release('ctrl+plus+plus')
-                                    elif zoom_mode == "zoom_out":
-                                        print("i zoomed out")
-                                        logger.info(f'Gesture: Zoom Out')
-                                        gesture_txt = "   Zoom Out"
-                                        if enable_keypress:
-                                            keyboard.press_and_release('ctrl+-+-')
-                                    else:
-                                        logger.info(f'Error in Zoom Gesture')
-
-                                    idx_belt = []   # Clear arrays
                                     zoom_belt = []
+                                    idx_belt = []
+                                    mouse.init()
+                                    if enable_keypress:
+                                        pyautogui.press('b')
+                                    sleepy_time = time.time()
+
+                                gesture_timer.toc()
+                            # End of Gesture Mode
+
+                            # Mouse Mode [Deprecated] hijacked by Browse Mode
+                            if not gesture_mode:
+                                mouse_timer.tic()
+                                global which_series
+                                if fc[1] == 0 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1 and not sleeping():
+                                    which_series = 0.3
+                                    print("1 fing")
+                                    logger.info(f'Gesture: one_finger_up')
+                                    sleepy_time = time.time()
+
+                                if fc[1] == 0 and fc[2] == 0 and fc[3] == 1 and fc[4] == 1 and not sleeping():
+                                    which_series = 0.8
+                                    print("2 fing")
+                                    logger.info(f'Gesture: two_finger_up')
+                                    sleepy_time = time.time()
+
+                                if click_mode == "curl":
+                                    click_state = curl_click(lm_list1)
+                                else:
+                                    click_state = thumb_click(lm_list1)
+                                mouse.update(lm_list1, click_state, which_series)
+                                mouse.move_mouse_to_abs_position()
+
+                                if mouse.left_pressed is True:
+                                    color_image = cv2.putText(color_image, 'Left Press', (1280 - 340, 0 + 150),
+                                                              # from 280 to 340
+                                                              cv2.FONT_HERSHEY_SIMPLEX, 2, color=(0, 255, 0),
+                                                              thickness=5)
+                                mouse_timer.toc()
+
+                                # Check Thumbs Up Gesture
+                                if is_thumbs_up and is_curl and not sleeping():
+                                    pyautogui.mouseUp()  ### new
+                                    gesture_mode = True
+                                    print("gesture mode now on")
+                                    logger.info(f'Gesture: Thumbs Up')
                                     rotate_belt = []
-                                    sleepy_time = time.time()   # Sleep time reset
+                                    if enable_keypress:
+                                        pyautogui.press('b')
+                                    sleepy_time = time.time() + 0.5
+                            # End of Mouse Mode
 
+                    debug_timer.tic()
+                    annotated_image = generate_overlay(color_image, results=results, fps=fps, depth_image=depth_image,
+                                                       ptr_coords=ptr_coords, depth_coords=depth_coords,
+                                                       gesture_mode=gesture_mode, gesture_txt=gesture_txt)
+                    self.display_image(annotated_image)
+                    debug_timer.toc()
 
-                            # Check Rotate Gestures
-                            is_rotate = False
-                            # if is_curl and not is_swipe and not is_zoom and lm_list1[12][1] < lm_list1[3][1] and len(rotate_belt) == FPS:
-                            #     is_rotate, rotate_mode = rotate(rotate_belt)
-                            #     if is_rotate:
-                            #         if rotate_mode == "rotate_cw":
-                            #             print("i rotated cw")
-                            #             logger.info(f'Gesture: Rotate Clockwise')
-                            #             gesture_txt = " Rotate CW "
-                            #             if enable_keypress:
-                            #                 pyautogui.hotkey('ctrl', ']')
-                            #                 # keyboard.press_and_release('ctrl+]')
-                            #         elif rotate_mode == "rotate_ccw":
-                            #             print("i rotated ccw")
-                            #             logger.info(f'Gesture: Rotate Counter-clockwise')
-                            #             gesture_txt = " Rotate CCW"
-                            #             if enable_keypress:
-                            #                 pyautogui.hotkey('ctrl', '[')
-                            #                 # keyboard.press_and_release('ctrl+[')
-                            #         else:
-                            #             logger.info(f'Error in Rotate Gesture')
-                            #
-                            #         idx_belt = []   # Clear arrays
-                            #         zoom_belt = []
-                            #         rotate_belt = []
-                            #         sleepy_time = time.time()   # Sleep time reset
-
-
-                            # Check Thumbs Up Gesture
-                            if is_thumbs_up and is_curl and not is_swipe and not is_zoom and not is_rotate:
-                                gesture_mode = False
-                                print("gesture mode now off")
-                                logger.info(f'Gesture: Thumbs Up')
-                                rotate_belt = []
-                                zoom_belt = []
-                                idx_belt = []
-                                mouse.init()
-                                if enable_keypress:
-                                    pyautogui.press('m')
-                                sleepy_time = time.time()
-
-                            gesture_timer.toc()
-                        # End of Gesture Mode
-
-                        # Mouse Mode
-                        if not gesture_mode and not sleeping():
-                            mouse_timer.tic()
-                            if click_mode == "curl":
-                                click_state = curl_click(lm_list1)
-                            else:
-                                click_state = thumb_click(lm_list1)
-                            mouse.update(lm_list1, click_state)
-
-                            if not is_curl:
-                                if mouse_mode == "palm":
-                                    mouse.move_mouse_to_abs_position()
-                                elif mouse_mode == "middle":
-                                    mouse.move_mouse_to_rel_position()
-
-                            if mouse.left_pressed is True:
-                                color_image = cv2.putText(color_image, 'Left Press', (1280-280, 0+150),
-                                                            cv2.FONT_HERSHEY_SIMPLEX, 1.5, color=(0, 255, 0), thickness=3)
-                            mouse_timer.toc()
-
-                            # Check Thumbs Up Gesture
-                            if is_thumbs_up and is_curl:
-                                pyautogui.mouseUp() ### new
-                                gesture_mode = True
-                                print("gesture mode now on")
-                                logger.info(f'Gesture: Thumbs Up')
-                                rotate_belt = []
-                                if enable_keypress:
-                                    pyautogui.press('m')
-                                sleepy_time = time.time() + 0.5
-                        # End of Mouse Mode
-
-                debug_timer.tic()
-                annotated_image = generate_overlay(color_image, results=results, fps=fps, depth_image=depth_image,
-                                                        ptr_coords=ptr_coords, depth_coords=depth_coords,
-                                                        gesture_mode=gesture_mode, gesture_txt=gesture_txt)
-                self.display_image(annotated_image)
-                debug_timer.toc()
+                except:
+                    pass
 
         except:
             logger.error('Main program terminated with exception.', exc_info=True)
@@ -405,7 +427,7 @@ class MainThread(QThread):
             QtWidgets.qApp.quit()
 
 
-#GUI
+# GUI
 
 
 if __name__ == '__main__':
@@ -416,7 +438,8 @@ if __name__ == '__main__':
     image_writer = ThreadedImageWriter().start()
 
     # Camera
-    camera = RealSenseCamera(width=1280, height=720, fps=30, enable_color=True, enable_depth=True, enable_emitter=emitter)
+    camera = RealSenseCamera(width=1280, height=720, fps=30, enable_color=True, enable_depth=True,
+                             enable_emitter=emitter)
     camera.start()
 
     # Squeeze config here ####
@@ -425,6 +448,7 @@ if __name__ == '__main__':
     root = Tk()
     root.title("fruit salad")
     root.iconbitmap("media/hand.ico")
+
 
     # Button functions
     def gui_glove_color(color):
@@ -485,25 +509,25 @@ if __name__ == '__main__':
     gui_left_button.grid(row=1, column=1)
 
     # Dropdown Menu
-    gui_monitor_label = Label(gui_monitor_frame, text="Monitor Resolution:")
-    gui_monitor_label.grid(row=0, column=0)
+    # gui_monitor_label = Label(gui_monitor_frame, text="Monitor Resolution:")
+    # gui_monitor_label.grid(row=0, column=0)
 
 
-    def gui_show():
-        global monitor_resolution
-        monitor_resolution = (int(gui_selected.get().split('x')[0]), int(gui_selected.get().split('x')[1]))
-        reso_label = Label(gui_monitor_frame, text=gui_selected.get(), font=("Consolas", 11, "bold"))
-        reso_label.grid(row=3, column=0)
-
-
-    gui_selected = StringVar()
-    gui_selected.set("1280 x 1024")
-
-    gui_drop = OptionMenu(gui_monitor_frame, gui_selected, "1280 x 1024", " 1366 x 768 ", " 1600 x 900 ", "1920 x 1080",
-                          "1920 x 1200", "2560 x 1440", "3440 x 1440", "3840 x 2160")
-    gui_drop.grid(row=1, column=0)
-
-    gui_reso_button = Button(gui_monitor_frame, text="Confirm", command=gui_show).grid(row=2, column=0)
+    # def gui_show():
+    #     global monitor_resolution
+    #     monitor_resolution = (int(gui_selected.get().split('x')[0]), int(gui_selected.get().split('x')[1]))
+    #     reso_label = Label(gui_monitor_frame, text=gui_selected.get(), font=("Consolas", 11, "bold"))
+    #     reso_label.grid(row=3, column=0)
+    #
+    #
+    # gui_selected = StringVar()
+    # gui_selected.set("1280 x 1024")
+    #
+    # gui_drop = OptionMenu(gui_monitor_frame, gui_selected, "1280 x 1024", " 1366 x 768 ", " 1600 x 900 ", "1920 x 1080",
+    #                       "1920 x 1200", "2560 x 1440", "3440 x 1440", "3840 x 2160")
+    # gui_drop.grid(row=1, column=0)
+    #
+    # gui_reso_button = Button(gui_monitor_frame, text="Confirm", command=gui_show).grid(row=2, column=0)
 
     # Quit
     gui_button_quit = Button(root, text="Begin Gesture Program", command=root.destroy)
@@ -516,9 +540,11 @@ if __name__ == '__main__':
     # MediaPipe
     mp_drawing = mp.solutions.drawing_utils
     if glove_type == "l_white":
-        detector = mp.solutions.hands.Hands(max_num_hands=1, model_complexity=1, min_detection_confidence=0.8, min_tracking_confidence=0.8)
+        detector = mp.solutions.hands.Hands(max_num_hands=2, model_complexity=1, min_detection_confidence=0.8,
+                                            min_tracking_confidence=0.8)
     if glove_type == "nl_green":
-        detector = mp.solutions.hands.Hands(max_num_hands=1, model_complexity=1, min_detection_confidence=0.4, min_tracking_confidence=0.4)
+        detector = mp.solutions.hands.Hands(max_num_hands=2, model_complexity=1, min_detection_confidence=0.4,
+                                            min_tracking_confidence=0.4)
 
     # Mouse
     mouse = MouseControl(ptr_finger=mouse_mode, monitor_resolution=monitor_resolution)

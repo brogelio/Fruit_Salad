@@ -3,13 +3,11 @@ import cv2
 import numpy as np
 pyautogui.FAILSAFE = False
 
-
-
 class MouseControl(object):
     """
     Class for using MediaPipe hand keypoints for simulating mouse functionalities
     """
-    def __init__(self, monitor_resolution=(1920,1080), camera_resolution=(1280,720), ptr_finger="middle"):
+    def __init__(self, monitor_resolution=(2560,1440), camera_resolution=(1280,720), ptr_finger="middle"):
         self.monitor_resolution = monitor_resolution
         self.camera_resolution = camera_resolution
         self.working_area = (int(camera_resolution[0]*0.7), int(camera_resolution[1]*0.7))
@@ -17,7 +15,6 @@ class MouseControl(object):
             self.ptr_lm_index = 12
         if ptr_finger == 'palm':
             self.ptr_lm_index = 9
-
 
 
     def init(self):
@@ -33,10 +30,10 @@ class MouseControl(object):
         self.max_accel = 0
 
 
-    def update(self, keypoints, press_state=None):
+    def update(self, keypoints, press_state=None, fing_up = 640):
         if keypoints is not None:
             self.keypoints = keypoints
-
+            self.fing_up = fing_up
             prev_state = self.press_state
             self.press_state = press_state
             if prev_state is not None:
@@ -49,7 +46,7 @@ class MouseControl(object):
                     self.left_pressed = False
 
             prev_position = self.position
-            self.position = self.get_mouse_keypoint()
+            self.position = self.get_mouse_keypoint(fing_up)
 
             prev_velocity = self.velocity 
             if prev_position is not None:
@@ -65,9 +62,9 @@ class MouseControl(object):
                     self.max_accel = self.mouse_accel
 
 
-    def get_mouse_keypoint(self):
+    def get_mouse_keypoint(self, fing_up):
         x, y, z = self.keypoints[self.ptr_lm_index]
-        return x, y
+        return fing_up, x
 
 
     def move_mouse(self, monitor_position):

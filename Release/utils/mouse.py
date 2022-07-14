@@ -7,7 +7,7 @@ class MouseControl(object):
     """
     Class for using MediaPipe hand keypoints for simulating mouse functionalities
     """
-    def __init__(self, monitor_resolution=(2560,1440), camera_resolution=(1280,720), ptr_finger="middle"):
+    def __init__(self, monitor_resolution=(1920,1080), camera_resolution=(1280,720), ptr_finger="middle"):
         self.monitor_resolution = monitor_resolution
         self.camera_resolution = camera_resolution
         self.working_area = (int(camera_resolution[0]*0.7), int(camera_resolution[1]*0.7))
@@ -15,7 +15,6 @@ class MouseControl(object):
             self.ptr_lm_index = 12
         if ptr_finger == 'palm':
             self.ptr_lm_index = 9
-
 
     def init(self):
         self.keypoints = None
@@ -29,8 +28,50 @@ class MouseControl(object):
         self.max_speed = 0
         self.max_accel = 0
 
+    def update(self, keypoints, press_state=None):
+        if keypoints is not None:
+            self.keypoints = keypoints
+            prev_state = self.press_state
+            self.press_state = press_state
+            if prev_state is not None:
+                if self.left_pressed is False and self.press_state is True:
+                    # pyautogui.mouseDown()
+                    self.left_pressed = True
 
-    def update(self, keypoints, press_state=None, fing_up = 640):
+                if self.left_pressed is True and self.press_state is False:
+                    # pyautogui.mouseUp()
+                    self.left_pressed = False
+
+            prev_position = self.position
+            self.position = self.get_mouse_keypoint()
+            prev_velocity = self.velocity 
+            if prev_position is not None:
+                self.velocity = self.position[0]-prev_position[0], self.position[1]-prev_position[1]
+                self.mouse_speed = (self.velocity[0]**2 + self.velocity[1]**2) ** 0.5
+                if self.mouse_speed > self.max_speed:
+                    self.max_speed = self.mouse_speed
+
+            if prev_velocity is not None:
+                self.acceleration = self.velocity[0]-prev_velocity[0], self.velocity[1]-prev_velocity[1]
+                self.mouse_accel = (self.acceleration[0]**2 + self.acceleration[1]**2) ** 0.5
+                if self.mouse_accel > self.max_accel:
+                    self.max_accel = self.mouse_accel
+
+    def scroll_drag(self, scroll_clicks=50):
+        if self.position is None or self.velocity is None:
+            return
+        if self.left_pressed:
+            monitor_delta = self.velocity[0]
+            # print('here', int(monitor_delta*self.monitor_resolution[0]))
+            if abs(int(monitor_delta*self.monitor_resolution[0])) > 1:
+                if int(monitor_delta*self.monitor_resolution[0]) > 0:
+                    pyautogui.scroll(-scroll_clicks, _pause=False)
+                    print('scroll down: prev image')
+                else:
+                    pyautogui.scroll(scroll_clicks, _pause=False)
+                    print('scroll up: next image')
+
+    def update2(self, keypoints, press_state=None, fing_up = 640):
         if keypoints is not None:
             self.keypoints = keypoints
             self.fing_up = fing_up
@@ -46,7 +87,7 @@ class MouseControl(object):
                     self.left_pressed = False
 
             prev_position = self.position
-            self.position = self.get_mouse_keypoint(fing_up)
+            self.position = self.get_mouse_keypoint2(fing_up)
 
             prev_velocity = self.velocity 
             if prev_position is not None:
@@ -61,8 +102,11 @@ class MouseControl(object):
                 if self.mouse_accel > self.max_accel:
                     self.max_accel = self.mouse_accel
 
+    def get_mouse_keypoint(self):
+        x, y, z = self.keypoints[self.ptr_lm_index]
+        return x, y
 
-    def get_mouse_keypoint(self, fing_up):
+    def get_mouse_keypoint2(self, fing_up):
         x, y, z = self.keypoints[self.ptr_lm_index]
         return fing_up, x
 

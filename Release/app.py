@@ -24,15 +24,16 @@ from tkinter import *
 
 # Configuration variables
 emitter = True  # you can disable RealSense IR emitter
-log_level = logging.DEBUG  # log eve
-# rything
+log_level = logging.DEBUG  # log everything
 log_dir = 'log'  # log directory (automatically created)
 save_frames = False  # you can save captured frames to {log_dir}\run{n}\frames
 glove_type = "l_white"  # "nl_green" or "l_white"
 dominant_hand = "Right"  # "Right" or "Left"
 enable_keypress = True  # you can disable keypress when not needed
-monitor_resolution = (2560, 1440)
+monitor_resolution = (1920, 1080) #(2560, 1440)
 which_series = 0.3  # 480 or 1440 x-value
+scroll_mode = "scroll" # "scroll" or "drag"
+scroll_speed = 50   # not sure about units; doesn't seem to be affected by Windows 10 scroll settings
 
 # Relative mouse movement
 # mouse_mode = "middle"
@@ -42,13 +43,15 @@ which_series = 0.3  # 480 or 1440 x-value
 mouse_mode = "palm"  # "palm" or "middle"
 click_mode = "curl"  # "curl" or "palm"
 
+
+
+
 # Global variables
 CAMERA_RESOLUTION = (1280, 720)
 idx_belt = []
 zoom_belt = []
 rotate_belt = []
-FPS = 25
-
+FPS = 17 # edit(?)
 
 # Sleep Timer
 def sleeping():
@@ -57,7 +60,6 @@ def sleeping():
         return False
     else:
         return True
-
 
 # Initialize Logger
 def init_logging(log_dir: str) -> str:
@@ -351,7 +353,7 @@ class MainThread(QThread):
                                     mouse.init()
                                     if enable_keypress:
                                         pyautogui.press('b')
-                                    sleepy_time = time.time()
+                                    sleepy_time = time.time() + 0.5
 
                                 gesture_timer.toc()
                             # End of Gesture Mode
@@ -364,20 +366,31 @@ class MainThread(QThread):
                                     which_series = 0.3
                                     print("1 fing")
                                     logger.info(f'Gesture: one_finger_up')
+                                    if scroll_mode == "scroll":
+                                        pyautogui.moveTo(monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
                                     sleepy_time = time.time()
 
                                 if fc[1] == 0 and fc[2] == 0 and fc[3] == 1 and fc[4] == 1 and not sleeping():
                                     which_series = 0.8
                                     print("2 fing")
                                     logger.info(f'Gesture: two_finger_up')
+                                    if scroll_mode == "scroll":
+                                        pyautogui.moveTo(2*monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
                                     sleepy_time = time.time()
 
                                 if click_mode == "curl":
                                     click_state = curl_click(lm_list1)
                                 else:
                                     click_state = thumb_click(lm_list1)
-                                mouse.update(lm_list1, click_state, which_series)
-                                mouse.move_mouse_to_abs_position()
+
+                                # Use scroll wheel commands
+                                if scroll_mode == "scroll":
+                                    mouse.update(lm_list1, click_state)
+                                    mouse.scroll_drag(scroll_clicks=scroll_speed)
+                                # Use click and drag commands
+                                else:
+                                    mouse.update2(lm_list1, click_state, which_series)
+                                    mouse.move_mouse_to_abs_position()
 
                                 if mouse.left_pressed is True:
                                     color_image = cv2.putText(color_image, 'Left Press', (1280 - 340, 0 + 150),

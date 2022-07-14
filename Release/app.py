@@ -35,6 +35,7 @@ which_series = 0.3  # 480 or 1440 x-value
 scroll_mode = "scroll" # "scroll" or "drag"
 scroll_speed = 50   # not sure about units; doesn't seem to be affected by Windows 10 scroll settings
 
+
 # Relative mouse movement
 # mouse_mode = "middle"
 # click_mode = "palm"
@@ -43,15 +44,51 @@ scroll_speed = 50   # not sure about units; doesn't seem to be affected by Windo
 mouse_mode = "palm"  # "palm" or "middle"
 click_mode = "curl"  # "curl" or "palm"
 
-
-
-
 # Global variables
 CAMERA_RESOLUTION = (1280, 720)
+UNLOCK_BOX_REL = [[0.415, 0.3],[0.585, 0.7]]
+UNLOCK_BOX_ABS = [[int(UNLOCK_BOX_REL[0][0]*CAMERA_RESOLUTION[0]),int(UNLOCK_BOX_REL[0][1]*CAMERA_RESOLUTION[1])],
+                  [int(UNLOCK_BOX_REL[1][0]*CAMERA_RESOLUTION[0]),int(UNLOCK_BOX_REL[1][1]*CAMERA_RESOLUTION[1])]]
+
+LOCK_BOX_REL = [[0.415+0.25, 0.3],[0.585+0.25, 0.7]]
+LOCK_BOX_ABS = [[int(LOCK_BOX_REL[0][0]*CAMERA_RESOLUTION[0]),int(LOCK_BOX_REL[0][1]*CAMERA_RESOLUTION[1])],
+                  [int(LOCK_BOX_REL[1][0]*CAMERA_RESOLUTION[0]),int(LOCK_BOX_REL[1][1]*CAMERA_RESOLUTION[1])]]
 idx_belt = []
 zoom_belt = []
 rotate_belt = []
 FPS = 17 # edit(?)
+
+
+
+def is_inside_box(lm_list, box):
+    min_x, min_y = CAMERA_RESOLUTION[0], CAMERA_RESOLUTION[1]
+    max_x, max_y = -1, -1
+    for idx in range(len(lm_list)-1):
+        if lm_list[idx][0] < min_x:
+            min_x = lm_list[idx][0]
+        if lm_list[idx][0] > max_x:
+            max_x = lm_list[idx][0]
+        if lm_list[idx][1] < min_y:
+            min_y = lm_list[idx][1]
+        if lm_list[idx][1] > max_y:
+            max_y = lm_list[idx][1]
+    if min_x > box[0][0] and max_x < box[1][0] and min_y > box[0][1] and max_y < box[1][1]:
+        return True
+    return False
+
+def toggle_lock(lm_list, is_inside, is_locked, box):
+    global inside_time
+    is_inside_new =  is_inside_box(lm_list, box)
+    is_locked_new = is_locked
+    if is_inside_new:
+        if not is_inside:
+            inside_time = time.time()
+        else:
+            if time.time() - inside_time > 3:
+                is_locked_new = not is_locked
+                inside_time = time.time() + 3
+    return is_inside_new, is_locked_new
+
 
 # Sleep Timer
 def sleeping():
@@ -104,20 +141,31 @@ def generate_overlay(color_image, **kwargs):
     depth_coords = kwargs['depth_coords']
     gesture_mode = kwargs['gesture_mode']
     gesture_txt = kwargs['gesture_txt']
+    is_inside = kwargs['is_inside']
+    is_locked = kwargs['is_locked']
 
     annotated_image = color_image.copy()
 
+    # Lock/Unlock Region Overlay
+    if is_locked:
+        box_color = (0, 0, 255) if not is_inside else (0, 255, 255)
+        cv2.rectangle(annotated_image, [UNLOCK_BOX_ABS[0][0], UNLOCK_BOX_ABS[0][1]], [UNLOCK_BOX_ABS[1][0], UNLOCK_BOX_ABS[1][1]], box_color, thickness=4)
+        cv2.putText(annotated_image, f'LOCKED', (UNLOCK_BOX_ABS[0][0], UNLOCK_BOX_ABS[1][1] + 40), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 255), 4)
+    else:
+        box_color = (0, 255, 0) if not is_inside else (0, 255, 255)
+        cv2.rectangle(annotated_image, [LOCK_BOX_ABS[0][0], LOCK_BOX_ABS[0][1]], [LOCK_BOX_ABS[1][0], LOCK_BOX_ABS[1][1]], box_color, thickness=2)
+        cv2.putText(annotated_image, f'UNLOCKED', (LOCK_BOX_ABS[0][0], LOCK_BOX_ABS[1][1] + 40), cv2.FONT_HERSHEY_PLAIN, 3, (0, 255, 0), 2)
+
     # FPS overlay
-    cv2.putText(annotated_image, f'{fps:.2f}fps', (1280 - 300, 0 + 50), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 0), 5)
+    cv2.putText(annotated_image, f'{fps:.2f}fps', (1030, 50), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 0), 5)
 
     # Mode overlay
-    mode_text = "Gesture" if gesture_mode else " Mouse "
-    cv2.putText(annotated_image, mode_text, (1280 - 240, 0 + 100), cv2.FONT_HERSHEY_PLAIN, 3, (255, 255, 255), 3)
+    mode_text = " Mode: Gesture" if gesture_mode else " Mode: Navigate"
+    cv2.putText(annotated_image, mode_text, (0, 50), cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 3)
 
     # Gesture overlay
     if gesture_mode and gesture_txt is not None:
-        cv2.putText(annotated_image, gesture_txt, (1280 - 380, 0 + 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255),
-                    5)  # from 320 to 380
+        cv2.putText(annotated_image, gesture_txt, (1280 - 380, 0 + 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255), 5)  # from 320 to 380
 
     # MediaPipe Landmark Overlay
     if results.multi_hand_landmarks:
@@ -140,6 +188,7 @@ def generate_overlay(color_image, **kwargs):
                     cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0), 5)
 
     return annotated_image
+
 
 
 class MainThread(QThread):
@@ -168,8 +217,11 @@ class MainThread(QThread):
 
         # Initialize loop variables
         sleepy_time = time.time()
+        inside_time = time.time()
         prevTime = time.time() - 1e-3
         gesture_mode = True
+        is_inside = False
+        is_locked = True
         gesture_txt = None
         ptr_coords = None
         depth_coords = None
@@ -219,6 +271,12 @@ class MainThread(QThread):
 
                         # Gesture classifier and mouse mode will only work on the specified hand
                         if handedness == dominant_hand:
+                            
+                            if is_locked:
+                                is_inside, is_locked = toggle_lock(lm_list1, is_inside, is_locked, box=UNLOCK_BOX_REL)
+                            else:
+                                is_inside, is_locked = toggle_lock(lm_list1, is_inside, is_locked, box=LOCK_BOX_REL)
+
                             ptr_coords = [int(lm_list1[8][0] * CAMERA_RESOLUTION[0]),
                                           int(lm_list1[8][1] * CAMERA_RESOLUTION[1])]
                             depth_coords = [int(lm_list1[9][0] * CAMERA_RESOLUTION[0]),
@@ -237,7 +295,7 @@ class MainThread(QThread):
                             is_thumbs_up = gesture_flip(lm_list1)
 
                             # Gesture Mode
-                            if gesture_mode and not sleeping():
+                            if gesture_mode and not sleeping() and not is_locked:
                                 gesture_timer.tic()
                                 gesture_txt = None
                                 color_image = cv2.putText(color_image, 'Waiting for Gesture', (1280 - 640, 0 + 150),
@@ -296,13 +354,13 @@ class MainThread(QThread):
                                         if zoom_mode == "zoom_in":
                                             print("i zoomed in")
                                             logger.info(f'Gesture: Zoom In')
-                                            gesture_txt = "   Zoom In "
+                                            gesture_txt = " Zoom In "
                                             if enable_keypress:
                                                 keyboard.press_and_release('ctrl+plus+plus')
                                         elif zoom_mode == "zoom_out":
                                             print("i zoomed out")
                                             logger.info(f'Gesture: Zoom Out')
-                                            gesture_txt = "   Zoom Out"
+                                            gesture_txt = " Zoom Out"
                                             if enable_keypress:
                                                 keyboard.press_and_release('ctrl+-+-')
                                         else:
@@ -359,7 +417,7 @@ class MainThread(QThread):
                             # End of Gesture Mode
 
                             # Mouse Mode [Deprecated] hijacked by Browse Mode
-                            if not gesture_mode:
+                            if not gesture_mode and not sleeping() and not is_locked:
                                 mouse_timer.tic()
                                 global which_series
                                 if fc[1] == 0 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1 and not sleeping():
@@ -414,12 +472,13 @@ class MainThread(QThread):
                     debug_timer.tic()
                     annotated_image = generate_overlay(color_image, results=results, fps=fps, depth_image=depth_image,
                                                        ptr_coords=ptr_coords, depth_coords=depth_coords,
-                                                       gesture_mode=gesture_mode, gesture_txt=gesture_txt)
+                                                       gesture_mode=gesture_mode, gesture_txt=gesture_txt,
+                                                       is_inside=is_inside, is_locked=is_locked)
                     self.display_image(annotated_image)
                     debug_timer.toc()
 
                 except:
-                    pass
+                    logger.error('Main program terminated with exception.', exc_info=True)
 
         except:
             logger.error('Main program terminated with exception.', exc_info=True)

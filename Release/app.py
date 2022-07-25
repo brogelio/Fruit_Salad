@@ -14,6 +14,7 @@ from utils.mouse import MouseControl
 from utils.gestures import *
 from utils.overlay import MainWindow
 import logging
+import webbrowser
 
 logger = logging.getLogger('app.py')
 import pyautogui
@@ -143,6 +144,7 @@ def generate_overlay(color_image, **kwargs):
     gesture_txt = kwargs['gesture_txt']
     is_inside = kwargs['is_inside']
     is_locked = kwargs['is_locked']
+    is_waiting = kwargs['is_waiting']
 
     annotated_image = color_image.copy()
 
@@ -156,15 +158,21 @@ def generate_overlay(color_image, **kwargs):
         cv2.rectangle(annotated_image, [LOCK_BOX_ABS[0][0], LOCK_BOX_ABS[0][1]], [LOCK_BOX_ABS[1][0], LOCK_BOX_ABS[1][1]], box_color, thickness=2)
         cv2.putText(annotated_image, f'UNLOCKED', (LOCK_BOX_ABS[0][0], LOCK_BOX_ABS[1][1] + 40), cv2.FONT_HERSHEY_PLAIN, 3, (0, 255, 0), 2)
 
+    if is_waiting:
+        cv2.putText(annotated_image, 'Waiting for Gesture', (1280 - 640, 0 + 150),
+                                  # from 480 to 520
+                                  cv2.FONT_HERSHEY_SIMPLEX, 2, color=(0, 255, 0), thickness=5)
+
+
     # FPS overlay
     cv2.putText(annotated_image, f'{fps:.2f}fps', (1030, 50), cv2.FONT_HERSHEY_PLAIN, 3, (0, 0, 0), 5)
 
     # Mode overlay
-    mode_text = " Mode: Gesture" if gesture_mode else " Mode: Navigate"
+    mode_text = " Mode: Gesture" if gesture_mode else " Mode: Browse"
     cv2.putText(annotated_image, mode_text, (0, 50), cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 3)
 
     # Gesture overlay
-    if gesture_mode and gesture_txt is not None:
+    if gesture_txt is not None:
         cv2.putText(annotated_image, gesture_txt, (1280 - 380, 0 + 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255), 5)  # from 320 to 380
 
     # MediaPipe Landmark Overlay
@@ -219,12 +227,13 @@ class MainThread(QThread):
         sleepy_time = time.time()
         inside_time = time.time()
         prevTime = time.time() - 1e-3
-        gesture_mode = True
+        gesture_mode = False
         is_inside = False
         is_locked = True
         gesture_txt = None
         ptr_coords = None
         depth_coords = None
+        is_waiting = False
 
         logger.info('Entering main program loop.')
         try:
@@ -248,7 +257,7 @@ class MainThread(QThread):
                     if save_frames:
                         image_writer.save(f'{run_dir}\\frames\\{camera.frame_count}.jpg', color_image)
                     save_timer.toc()
-
+                    save_color = color_image
                     # Hue shift if wearing green latex gloves
                     if glove_type == "nl_green":
                         hsv_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
@@ -294,13 +303,12 @@ class MainThread(QThread):
                             # Check thumb orientation
                             is_thumbs_up = gesture_flip(lm_list1)
 
+                            is_waiting = False
                             # Gesture Mode
                             if gesture_mode and not sleeping() and not is_locked:
                                 gesture_timer.tic()
                                 gesture_txt = None
-                                color_image = cv2.putText(color_image, 'Waiting for Gesture', (1280 - 640, 0 + 150),
-                                                          # from 480 to 520
-                                                          cv2.FONT_HERSHEY_SIMPLEX, 2, color=(0, 255, 0), thickness=5)
+                                is_waiting = True
 
                                 # Belt Filling Station
                                 belt_fill(lm_list1, ptr_coords, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt,
@@ -419,21 +427,31 @@ class MainThread(QThread):
                             # Mouse Mode [Deprecated] hijacked by Browse Mode
                             if not gesture_mode and not sleeping() and not is_locked:
                                 mouse_timer.tic()
+                                gesture_txt = None
                                 global which_series
                                 if fc[1] == 0 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1 and not sleeping():
                                     which_series = 0.3
                                     print("1 fing")
+                                    gesture_txt = " Panel 1"
+                                    # cv2.putText(color_image, panel_text, (0, 120), cv2.FONT_HERSHEY_PLAIN, 4,
+                                    #             (0, 255, 0), 3)
                                     logger.info(f'Gesture: one_finger_up')
                                     if scroll_mode == "scroll":
-                                        pyautogui.moveTo(monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
+                                        # pyautogui.moveTo(monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
+                                        pyautogui.leftClick(monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
                                     sleepy_time = time.time()
 
                                 if fc[1] == 0 and fc[2] == 0 and fc[3] == 1 and fc[4] == 1 and not sleeping():
                                     which_series = 0.8
                                     print("2 fing")
+                                    gesture_txt = " Panel 2"
+                                    # cv2.putText(color_image, panel_text, (0, 120), cv2.FONT_HERSHEY_PLAIN, 4,
+                                    #             (0, 255, 0), 3)
                                     logger.info(f'Gesture: two_finger_up')
                                     if scroll_mode == "scroll":
-                                        pyautogui.moveTo(2*monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
+                                        # pyautogui.moveTo(2*monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
+                                        pyautogui.leftClick(2 * monitor_resolution[0] // 3, monitor_resolution[1] // 2,
+                                                         _pause=False)
                                     sleepy_time = time.time()
 
                                 if click_mode == "curl":
@@ -470,10 +488,11 @@ class MainThread(QThread):
                             # End of Mouse Mode
 
                     debug_timer.tic()
-                    annotated_image = generate_overlay(color_image, results=results, fps=fps, depth_image=depth_image,
+                    annotated_image = generate_overlay(save_color, results=results, fps=fps, depth_image=depth_image,
                                                        ptr_coords=ptr_coords, depth_coords=depth_coords,
                                                        gesture_mode=gesture_mode, gesture_txt=gesture_txt,
-                                                       is_inside=is_inside, is_locked=is_locked)
+                                                       is_inside=is_inside, is_locked=is_locked, is_waiting=is_waiting)
+
                     self.display_image(annotated_image)
                     debug_timer.toc()
 
@@ -549,6 +568,12 @@ if __name__ == '__main__':
     gui_monitor_frame = LabelFrame(root, padx=143, pady=20)
     gui_monitor_frame.grid(row=2, column=0, padx=10, pady=10)
 
+    glove_state_d = Label(gui_color_frame, text="WHITE GLOVES", font=("Consolas", 20, "bold"))
+    glove_state_d.grid(row=0, column=1, columnspan=2)
+
+    chosen_hand_d = Label(gui_hand_frame, text="RIGHT HAND", font=("Consolas", 20, "bold"))
+    chosen_hand_d.grid(row=0, column=1, columnspan=2)
+
     # Buttons Widget; colors can be in HEX color codes
     # glove colors
     gui_glove_color_label = Label(gui_color_frame, text="Glove Color:")
@@ -604,6 +629,34 @@ if __name__ == '__main__':
     # Quit
     gui_button_quit = Button(root, text="Begin Gesture Program", command=root.destroy)
     gui_button_quit.grid(row=4, column=0, pady=5)
+
+    # About
+    def callback(url):
+        webbrowser.open_new(url)
+
+
+    def create():
+        abt_window = Toplevel(root)
+        abt_window.title('About')
+        Label(abt_window, text="fruit salad\n \'A Hand Gesture Recognition Program\' \n").pack()
+        ez_icon = Label(abt_window, text="App icon created by EasyIcons of icon-icons.com", fg="blue", cursor="hand2")
+        ez_icon.pack()
+        ez_icon.bind("<Button-1>", lambda e:
+                     callback("https://icon-icons.com/icon/hand-gesture-hands/42574"))
+
+        gl_icon = Label(abt_window, text="Gloves icons created by Smashicons - Flaticon", fg="blue", cursor="hand2")
+        gl_icon.pack()
+        gl_icon.bind("<Button-1>", lambda e:
+                     callback("https://www.flaticon.com/free-icons/gloves"))
+
+        cc_link = Label(abt_window, text="Licensed under Creative Commons", fg="blue", cursor="hand2")
+        cc_link.pack()
+        cc_link.bind("<Button-1>", lambda e:
+                     callback("https://creativecommons.org/licenses/by/4.0/"))
+
+
+    gui_button_abt = Button(root, text="About", command=create)
+    gui_button_abt.grid(row=5, column=0, pady=5)
 
     # Loop of window
     root.mainloop()

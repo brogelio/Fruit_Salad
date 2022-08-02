@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
 
 
 class MainWindow(QWidget):
-    def __init__(self, size=(640, 360), window_opacity=0.6):
+    def __init__(self, size=(500, 360), window_opacity=0.6):
         super(MainWindow, self).__init__()
         self.setWindowFlags(
             QtCore.Qt.WindowStaysOnTopHint |

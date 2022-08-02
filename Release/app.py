@@ -47,17 +47,17 @@ click_mode = "curl"  # "curl" or "palm"
 
 # Global variables
 CAMERA_RESOLUTION = (1280, 720)
-UNLOCK_BOX_REL = [[0.415, 0.3],[0.585, 0.7]]
+UNLOCK_BOX_REL = [[0.345, 0.3],[0.515, 0.7]]
 UNLOCK_BOX_ABS = [[int(UNLOCK_BOX_REL[0][0]*CAMERA_RESOLUTION[0]),int(UNLOCK_BOX_REL[0][1]*CAMERA_RESOLUTION[1])],
                   [int(UNLOCK_BOX_REL[1][0]*CAMERA_RESOLUTION[0]),int(UNLOCK_BOX_REL[1][1]*CAMERA_RESOLUTION[1])]]
 
-LOCK_BOX_REL = [[0.415+0.25, 0.3],[0.585+0.25, 0.7]]
+LOCK_BOX_REL = [[0.345+0.25, 0.3],[0.515+0.25, 0.7]]
 LOCK_BOX_ABS = [[int(LOCK_BOX_REL[0][0]*CAMERA_RESOLUTION[0]),int(LOCK_BOX_REL[0][1]*CAMERA_RESOLUTION[1])],
                   [int(LOCK_BOX_REL[1][0]*CAMERA_RESOLUTION[0]),int(LOCK_BOX_REL[1][1]*CAMERA_RESOLUTION[1])]]
 idx_belt = []
 zoom_belt = []
 rotate_belt = []
-FPS = 17 # edit(?)
+FPS = 25 # edit(?)
 
 
 
@@ -148,6 +148,7 @@ def generate_overlay(color_image, **kwargs):
 
     annotated_image = color_image.copy()
 
+
     # Lock/Unlock Region Overlay
     if is_locked:
         box_color = (0, 0, 255) if not is_inside else (0, 255, 255)
@@ -169,7 +170,7 @@ def generate_overlay(color_image, **kwargs):
 
     # Mode overlay
     mode_text = " Mode: Gesture" if gesture_mode else " Mode: Browse"
-    cv2.putText(annotated_image, mode_text, (0, 50), cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 3)
+    cv2.putText(annotated_image, mode_text, (280, 50), cv2.FONT_HERSHEY_PLAIN, 4, (255, 255, 255), 3)
 
     # Gesture overlay
     if gesture_txt is not None:
@@ -195,6 +196,7 @@ def generate_overlay(color_image, **kwargs):
                     # from 40 to 100
                     cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 0), 5)
 
+    annotated_image = annotated_image[0:720, 280:1280]
     return annotated_image
 
 
@@ -215,7 +217,7 @@ class MainThread(QThread):
 
     def display_image(self, image):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        pic = QImage(image.data, image.shape[1], image.shape[0], QImage.Format_RGB888).scaled(640, 360)
+        pic = QImage(image.data, image.shape[1], image.shape[0], QImage.Format_RGB888).scaled(500, 360)
         self.OverlayUpdate.emit(pic)  # calls the function linked through OverlayUpdate.connect()
 
     def main_loop(self):
@@ -429,7 +431,13 @@ class MainThread(QThread):
                                 mouse_timer.tic()
                                 gesture_txt = None
                                 global which_series
-                                if fc[1] == 0 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1 and not sleeping():
+                                idx_is_up = False
+                                mid_is_up = False
+                                if lm_list1[8][1] < lm_list1[7][1] < lm_list1[6][1]:
+                                    idx_is_up = True
+                                if lm_list1[12][1] < lm_list1[11][1] < lm_list1[10][1]:
+                                    mid_is_up = True
+                                if fc[1] == 0 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1 and not sleeping() and idx_is_up:
                                     which_series = 0.3
                                     print("1 fing")
                                     gesture_txt = " Panel 1"
@@ -441,7 +449,7 @@ class MainThread(QThread):
                                         pyautogui.leftClick(monitor_resolution[0]//3, monitor_resolution[1]//2, _pause=False)
                                     sleepy_time = time.time()
 
-                                if fc[1] == 0 and fc[2] == 0 and fc[3] == 1 and fc[4] == 1 and not sleeping():
+                                if fc[1] == 0 and fc[2] == 0 and fc[3] == 1 and fc[4] == 1 and not sleeping() and idx_is_up and mid_is_up:
                                     which_series = 0.8
                                     print("2 fing")
                                     gesture_txt = " Panel 2"
@@ -497,6 +505,11 @@ class MainThread(QThread):
                     debug_timer.toc()
 
                 except:
+                    annotated_image = generate_overlay(save_color, results=results, fps=fps, depth_image=depth_image,
+                                                       ptr_coords=ptr_coords, depth_coords=depth_coords,
+                                                       gesture_mode=gesture_mode, gesture_txt=gesture_txt,
+                                                       is_inside=is_inside, is_locked=is_locked, is_waiting=is_waiting)
+                    self.display_image(annotated_image)
                     logger.error('Main program terminated with exception.', exc_info=True)
 
         except:

@@ -1,0 +1,8 @@
+python_version >= "3.7"
+pyrealsense2
+mediapipe
+pyqt5
+tk
+pyautogui
+keyboard
+pyinstaller

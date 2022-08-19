@@ -15,16 +15,20 @@ class MouseControl(object):
             self.ptr_lm_index = 12
         if ptr_finger == 'palm':
             self.ptr_lm_index = 9
+        self.thumb_lm_index = 4
 
     def init(self):
         self.keypoints = None
         self.press_state = None
         self.position = None
         self.velocity = None
+        self.position_thumb = None
+        self.velocity_thumb = None
         self.acceleration = None
         self.mouse_speed = 0.0
         self.mouse_accel = 0.0
         self.left_pressed = False
+        self.dragging = False
         self.max_speed = 0
         self.max_accel = 0
 
@@ -41,10 +45,12 @@ class MouseControl(object):
                 if self.left_pressed is True and self.press_state is False:
                     # pyautogui.mouseUp()
                     self.left_pressed = False
+                    self.dragging = False
 
+            # For chosen mouse keypoint
             prev_position = self.position
             self.position = self.get_mouse_keypoint()
-            prev_velocity = self.velocity 
+            prev_velocity = self.velocity
             if prev_position is not None:
                 self.velocity = self.position[0]-prev_position[0], self.position[1]-prev_position[1]
                 self.mouse_speed = (self.velocity[0]**2 + self.velocity[1]**2) ** 0.5
@@ -57,19 +63,32 @@ class MouseControl(object):
                 if self.mouse_accel > self.max_accel:
                     self.max_accel = self.mouse_accel
 
-    def scroll_drag(self, scroll_clicks=50):
+            # For thumb
+            prev_position_thumb = self.position_thumb
+            self.position_thumb = self.get_thumb_keypoint()
+            if prev_position_thumb is not None:
+                self.velocity_thumb = self.position_thumb[0]-prev_position_thumb[0], self.position_thumb[1]-prev_position_thumb[1]
+
+
+    def scroll_drag(self, scroll_clicks=50, drag_sensitivity=3, trigger_sensitivity=6, thumbs_up_sensitivity=-7):
         if self.position is None or self.velocity is None:
             return
         if self.left_pressed:
             monitor_delta = self.velocity[0]
-            # print('here', int(monitor_delta*self.monitor_resolution[0]))
-            if abs(int(monitor_delta*self.monitor_resolution[0])) > 1:
+            drag_thresh = drag_sensitivity if self.dragging else trigger_sensitivity
+            thumb_deltay = self.velocity_thumb[1]*self.monitor_resolution[1]
+            # print('drag_x:', int(monitor_delta*self.monitor_resolution[0]), "drag_thresh:", drag_thresh, "self.dragging:", self.dragging)
+            # print("thumb_deltay:", thumb_deltay)
+            if abs(int(monitor_delta*self.monitor_resolution[0])) > drag_thresh and thumb_deltay > thumbs_up_sensitivity:
+                self.dragging = True
                 if int(monitor_delta*self.monitor_resolution[0]) > 0:
                     pyautogui.scroll(-scroll_clicks, _pause=False)
                     print('scroll down: prev image')
                 else:
                     pyautogui.scroll(scroll_clicks, _pause=False)
                     print('scroll up: next image')
+        else:
+            self.dragging = False
 
     def update2(self, keypoints, press_state=None, fing_up = 640):
         if keypoints is not None:
@@ -101,6 +120,10 @@ class MouseControl(object):
                 self.mouse_accel = (self.acceleration[0]**2 + self.acceleration[1]**2) ** 0.5
                 if self.mouse_accel > self.max_accel:
                     self.max_accel = self.mouse_accel
+
+    def get_thumb_keypoint(self):
+        x, y, z = self.keypoints[self.thumb_lm_index]
+        return x, y
 
     def get_mouse_keypoint(self):
         x, y, z = self.keypoints[self.ptr_lm_index]

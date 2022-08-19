@@ -10,9 +10,9 @@ def lm_rel_to_abs(landmark, cam_res=(1280, 720)):
     return [px, py, pz]
 
 
-def belt_fill(lm_list1, ptr_coords, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt, FPS):
+def belt_fill(lm_list1, ptr_coords, may_swipe, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt, FPS):
 
-    if not is_curl:
+    if not is_curl and may_swipe:
         if len(idx_belt) < FPS:
             idx_belt.append(ptr_coords)
         else:
@@ -79,33 +79,32 @@ def hand_curl(landmark_list):
     return finger_curl
 
 
-def swiped(idx_belt, vthresh=5, dthresh=150):
+def swiped(idx_belt, thresh=[5, 1], vert_adj=16/9, up_adj=1):
     def compute_speed(idx_belt):
         vx, vy = 0.0, 0.0
-        for idx in range(len(idx_belt)-1):
-            vx += idx_belt[idx+1][0] - idx_belt[idx][0]
-            vy += idx_belt[idx+1][1] - idx_belt[idx][1]
-        vx /= len(idx_belt)-1
-        vy /=  len(idx_belt)-1
-        vy *= 4/3   # vertical compensation
-        if vy  < 0: # swipe_up compensation
-            vy *= 1.5
-        speed = (vx**2 + vy**2)**0.5
-        return vx, vy, speed
+        ax, ay = 0.0, 0.0
+        for idx in range(1, len(idx_belt)-1):
+            vx += idx_belt[idx+1][0] - idx_belt[idx][0]  # horizontal speed in pixels per frame
+            vy += idx_belt[idx+1][1] - idx_belt[idx][1]  # vertical speed in pixels per frame
+            ax += idx_belt[idx+1][0] + idx_belt[idx-1][0] - 2*idx_belt[idx][0]  # horizontal accel in pixels per frame^2
+            ay += idx_belt[idx+1][1] + idx_belt[idx-1][1] - 2*idx_belt[idx][1]  # horizontal accel in pixels per frame^2
+        vx /= len(idx_belt)-2
+        vy /=  len(idx_belt)-2
+        ax /=  len(idx_belt)-2
+        ay /=  len(idx_belt)-2
+        vy *= vert_adj  # vertical compensation
+        ay *= vert_adj  # vertical compensation
+        if vy < 0:  # swipe_up compensation
+            vy *= up_adj
+        # speed = (vx**2 + vy**2)**0.5
+        speed = max(abs(vx), abs(vy))
+        accel = max(abs(ax), abs(ay))
+        return vx, vy, speed, ax, ay, accel
 
-    def compute_distance(idx_belt):
-        past_coords, new_coords = idx_belt[0], idx_belt[-1]
-        dx = new_coords[0] - past_coords[0]
-        dy = new_coords[1] - past_coords[1]
-        distance = (dx**2 + dy**2)**0.5
-        return dx, dy, distance
+    vx, vy, speed, ax, ay, accel = compute_speed(idx_belt)
+    print(f"vx={vx:.2f}, vy={vy:.2f}, speed={speed:.2f}, ax={ax:.2f}, ay={ay:.2f}, accel={accel:.2f}")
 
-    vx, vy, speed = compute_speed(idx_belt)
-    # print(f"vx={vx:.2f}, vy={vy:.2f}, speed={speed:.2f}")
-    # dx, dy, distance = compute_distance(idx_belt)
-    # print(f"dx={dx:.2f}, dy={dy:.2f}, distance={distance:.2f}")
-
-    if speed > vthresh:
+    if speed > thresh[0] and accel > thresh[1]:
         if abs(vy) > abs(vx):
             if vy < 0:
                 return True, "Up"
@@ -119,22 +118,9 @@ def swiped(idx_belt, vthresh=5, dthresh=150):
     else:
         return False, None
 
-    # if distance > dthresh:
-    #     if abs(vy) > abs(vx):
-    #         if dy < 0:
-    #             return True, "Up"
-    #         else:
-    #             return True, "Down"
-    #     else:
-    #         if dx > 0: # assumes image is flipped
-    #             return True, "Right"
-    #         else:
-    #             return True, "Left"
-    # else:
-    #     return False, None
 
 
-def zoomed(zoom_belt, thresh=3.5):  # coords = [[x,y],[x,y]] ;; 94 px
+def zoomed(zoom_belt, thresh=3.5, out_adj=1.4):  # coords = [[x,y],[x,y]] ;; 94 px
     def compute_angular_speed(zoom_belt):
         w = 0.0
         for idx in range(len(zoom_belt)-1):
@@ -147,7 +133,7 @@ def zoomed(zoom_belt, thresh=3.5):  # coords = [[x,y],[x,y]] ;; 94 px
             w += phase1 - phase0
         w /= len(zoom_belt)-1
         if w < 0:  # zoom_out compensation
-            w *= 1.4
+            w *= out_adj
         return w
 
     w = compute_angular_speed(zoom_belt)

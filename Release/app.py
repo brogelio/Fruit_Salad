@@ -34,11 +34,15 @@ dominant_hand = "Right"  # "Right" or "Left"
 enable_keypress = True  # you can disable keypress when not needed
 monitor_resolution = (1920, 1080) #(2560, 1440)
 which_series = 0.3  # 480 or 1440 x-value
-scroll_mode = "scroll" # "scroll" or "drag"
+scroll_mode = "scroll"  # "scroll" or "drag"
 scroll_speed = 50   # not sure about units; doesn't seem to be affected by Windows 10 scroll settings
 mouse_mode = "palm"  # "palm" or "middle"
 click_mode = "curl"  # "curl" or "palm"
-
+zoom_sensitivity = 3.5  # default value: 3.5
+swipe_sensitivity = [5, 1]  # default value: [5, 1], previous value: [5, 0]
+swipe_vert_adj = 16/9  # default value: 16/9, previous value: 4/3
+swipe_up_adj = 1  # default value: 1, previous value: 1.5
+drag_sensitivity = [2, 6, -7]  # default value: [1, 6, -7], previous value: [1, 1, -100]
 
 # Global variables
 CAMERA_RESOLUTION = (1280, 720)
@@ -59,6 +63,18 @@ zoom_belt = []
 rotate_belt = []
 FPS = 25
 BEGIN_PROGRAM = False
+
+
+
+# Clears gesture belt lists if they are not empty
+def clear_gesture_belts():
+    global idx_belt, zoom_belt, rotate_belt
+    if idx_belt:
+        idx_belt.clear()
+    if zoom_belt:
+        zoom_belt.clear()
+    if rotate_belt:
+        rotate_belt.clear()
 
 
 # Lock/unlock helper
@@ -286,11 +302,15 @@ class MainThread(QThread):
 
                         # Gesture classifier and mouse mode will only work on the specified hand
                         if handedness == dominant_hand:
-                            
+
                             if is_locked:
                                 is_inside, is_locked = toggle_lock(lm_list1, is_inside, is_locked, box=UNLOCK_BOX_REL)
+                                if not is_locked:
+                                    clear_gesture_belts()
                             else:
                                 is_inside, is_locked = toggle_lock(lm_list1, is_inside, is_locked, box=LOCK_BOX_REL)
+                            
+                            may_swipe = not (is_inside or is_locked)
 
                             ptr_coords = [int(lm_list1[8][0] * CAMERA_RESOLUTION[0]),
                                           int(lm_list1[8][1] * CAMERA_RESOLUTION[1])]
@@ -299,6 +319,7 @@ class MainThread(QThread):
 
                             # Check finger curl
                             fc = hand_curl(lm_list1)
+                            
                             is_curl = False
                             may_rotate = False
                             if fc[1] == 1 and fc[2] == 1 and fc[3] == 1 and fc[4] == 1:
@@ -317,14 +338,14 @@ class MainThread(QThread):
                                 is_waiting = True
 
                                 # Belt Filling Station
-                                belt_fill(lm_list1, ptr_coords, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt, FPS)
+                                belt_fill(lm_list1, ptr_coords, may_swipe, is_curl, may_rotate, idx_belt, zoom_belt, rotate_belt, FPS)
 
                                 # Check Swipe Gestures
                                 # swipe up/down ;; change series ;; left right arrow keys
                                 # swipe left/right ;; change img num ;; down up arrow keys
                                 is_swipe = False
                                 if not is_curl and not may_rotate and len(idx_belt) == FPS:
-                                    is_swipe, swipe_dir = swiped(idx_belt)
+                                    is_swipe, swipe_dir = swiped(idx_belt, thresh=swipe_sensitivity, vert_adj=swipe_vert_adj, up_adj=swipe_up_adj)
                                     if is_swipe:
                                         if swipe_dir == "Up":
                                             print("i swiped up")
@@ -353,16 +374,15 @@ class MainThread(QThread):
                                         else:
                                             logger.info(f'Error in Swipe Gesture')
 
-                                        idx_belt = []  # Clear arrays
-                                        zoom_belt = []
-                                        rotate_belt = []
+                                        clear_gesture_belts()  # Clear arrays
                                         sleepy_time = time.time()  # Sleep time reset
+
 
                                 # Check Zoom Gestures
                                 # zoom in/out ;; ctrl ++ ctrl --
                                 is_zoom = False
                                 if may_rotate and not is_curl and not is_swipe and len(zoom_belt) == FPS:
-                                    is_zoom, zoom_mode = zoomed(zoom_belt)
+                                    is_zoom, zoom_mode = zoomed(zoom_belt, thresh=zoom_sensitivity, out_adj=1.4)
                                     if is_zoom:
                                         if zoom_mode == "zoom_in":
                                             print("i zoomed in")
@@ -379,9 +399,7 @@ class MainThread(QThread):
                                         else:
                                             logger.info(f'Error in Zoom Gesture')
 
-                                        idx_belt = []  # Clear arrays
-                                        zoom_belt = []
-                                        rotate_belt = []
+                                        clear_gesture_belts()  # Clear arrays
                                         sleepy_time = time.time()  # Sleep time reset
 
 
@@ -391,13 +409,12 @@ class MainThread(QThread):
                                     print("gesture mode now off")
                                     logger.info(f'Gesture: Thumbs Up')
                                     gesture_txt = "Thumbs Up"
-                                    rotate_belt = []
-                                    zoom_belt = []
-                                    idx_belt = []
                                     mouse.init()
                                     if enable_keypress:
                                         pyautogui.press('b')
-                                    sleepy_time = time.time() + 0.5
+
+                                    clear_gesture_belts()  # Clear arrays
+                                    sleepy_time = time.time() + 0.5  # Sleep time reset
 
                                 gesture_timer.toc()
                             # End of Gesture Mode
@@ -405,7 +422,6 @@ class MainThread(QThread):
                             # Browse Mode
                             if not gesture_mode and not sleeping() and not is_locked:
                                 browse_timer.tic()
-
                                 gesture_txt = None
                                 global which_series
 
@@ -459,7 +475,8 @@ class MainThread(QThread):
                                 # Use scroll wheel commands
                                 if scroll_mode == "scroll":
                                     mouse.update(lm_list1, click_state)
-                                    mouse.scroll_drag(scroll_clicks=scroll_speed)
+                                    mouse.scroll_drag(scroll_clicks=scroll_speed, drag_sensitivity=drag_sensitivity[0],
+                                        trigger_sensitivity=drag_sensitivity[1], thumbs_up_sensitivity=drag_sensitivity[2])
                                 # Use click and drag commands
                                 else:
                                     mouse.update2(lm_list1, click_state, which_series)
@@ -482,12 +499,11 @@ class MainThread(QThread):
                                     print("gesture mode now on")
                                     logger.info(f'Gesture: Thumbs Up')
                                     gesture_txt = "Thumbs Up"
-                                    rotate_belt = []
-                                    zoom_belt = []
-                                    idx_belt = []
                                     if enable_keypress:
                                         pyautogui.press('b')
-                                    sleepy_time = time.time() + 0.5
+
+                                    clear_gesture_belts()  # Clear arrays
+                                    sleepy_time = time.time() + 0.5  # Sleep time reset
                             # End of Browse Mode
 
                     overlay_timer.tic()
